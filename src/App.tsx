@@ -7,21 +7,23 @@ import { DashboardOverview } from './pages/DashboardOverview';
 import { ChatPage } from './pages/ChatPage';
 import { DocumentsPage } from './pages/DocumentsPage';
 import { DataManagementPage } from './pages/DataManagementPage';
+import { AdminPage } from './pages/AdminPage';
 import { FullPageSpinner } from './components/ui/Spinner';
 
 function AppContent() {
-  const { session, loading } = useAuth();
+  const { session, loading, isAdmin } = useAuth();
   const [view, setView] = useState<View>('dashboard');
 
   if (loading) return <FullPageSpinner />;
   if (!session) return <AuthPage />;
 
   return (
-    <DashboardLayout currentView={view} onNavigate={setView}>
+    <DashboardLayout currentView={view} onNavigate={setView} isAdmin={isAdmin}>
       {view === 'dashboard' && <DashboardOverview onNavigate={setView} />}
       {view === 'chat' && <ChatPage />}
       {view === 'documents' && <DocumentsPage />}
       {view === 'data' && <DataManagementPage />}
+      {view === 'admin' && isAdmin && <AdminPage />}
     </DashboardLayout>
   );
 }

@@ -10,16 +10,18 @@ import {
   X,
   Wifi,
   WifiOff,
+  Shield,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { checkOllama } from '../lib/ollama';
 
-export type View = 'dashboard' | 'chat' | 'data' | 'documents';
+export type View = 'dashboard' | 'chat' | 'data' | 'documents' | 'admin';
 
 interface DashboardLayoutProps {
   currentView: View;
   onNavigate: (view: View) => void;
   children: ReactNode;
+  isAdmin?: boolean;
 }
 
 const navItems: { id: View; label: string; icon: typeof LayoutDashboard }[] = [
@@ -29,7 +31,11 @@ const navItems: { id: View; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'documents', label: 'Dokumen', icon: FileText },
 ];
 
-export function DashboardLayout({ currentView, onNavigate, children }: DashboardLayoutProps) {
+const adminNavItems: { id: View; label: string; icon: typeof LayoutDashboard }[] = [
+  { id: 'admin', label: 'Manajemen User', icon: Shield },
+];
+
+export function DashboardLayout({ currentView, onNavigate, children, isAdmin }: DashboardLayoutProps) {
   const { user, signOut } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [ollamaOnline, setOllamaOnline] = useState<boolean | null>(null);
@@ -63,6 +69,7 @@ export function DashboardLayout({ currentView, onNavigate, children }: Dashboard
           user={user?.email ?? ''}
           onSignOut={signOut}
           ollamaOnline={ollamaOnline}
+          isAdmin={isAdmin}
         />
       </aside>
 
@@ -83,6 +90,7 @@ export function DashboardLayout({ currentView, onNavigate, children }: Dashboard
               user={user?.email ?? ''}
               onSignOut={signOut}
               ollamaOnline={ollamaOnline}
+              isAdmin={isAdmin}
             />
           </aside>
         </div>
@@ -117,12 +125,14 @@ function SidebarContent({
   user,
   onSignOut,
   ollamaOnline,
+  isAdmin,
 }: {
   currentView: View;
   onNavigate: (v: View) => void;
   user: string;
   onSignOut: () => void;
   ollamaOnline: boolean | null;
+  isAdmin?: boolean;
 }) {
   return (
     <>
@@ -156,6 +166,30 @@ function SidebarContent({
           );
         })}
       </nav>
+
+      {isAdmin && (
+        <div className="px-3 pb-2">
+          <p className="px-3 text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Admin</p>
+          {adminNavItems.map((item) => {
+            const Icon = item.icon;
+            const active = currentView === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => onNavigate(item.id)}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                  active
+                    ? 'bg-teal-600 text-white shadow-sm shadow-teal-600/30'
+                    : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                <Icon className="w-5 h-5 shrink-0" />
+                {item.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <div className="px-3 py-3 border-t border-slate-800 space-y-3">
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800/50">
