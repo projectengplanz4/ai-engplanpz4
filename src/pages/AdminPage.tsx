@@ -8,12 +8,14 @@ import {
   Loader2,
   Crown,
   UserCircle,
+  UserPlus,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { listUsers, changeUserRole, deleteUser, type AdminUser } from '../lib/admin';
+import { listUsers, changeUserRole, deleteUser, createUser, type AdminUser } from '../lib/admin';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
+import { Select } from '../components/ui/Select';
 import { Modal } from '../components/ui/Modal';
 
 export function AdminPage() {
@@ -25,6 +27,11 @@ export function AdminPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<AdminUser | null>(null);
   const [roleConfirm, setRoleConfirm] = useState<{ user: AdminUser; newRole: 'user' | 'admin' } | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [newEmail, setNewEmail] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [newRole, setNewRole] = useState<'user' | 'admin'>('user');
+  const [createLoading, setCreateLoading] = useState(false);
 
   const loadUsers = useCallback(async () => {
     setLoading(true);
@@ -71,6 +78,26 @@ export function AdminPage() {
     setActionLoading(false);
   };
 
+  const handleCreateUser = async () => {
+    if (!newEmail.trim() || !newPassword.trim()) {
+      toast('Email dan kata sandi wajib diisi', 'error');
+      return;
+    }
+    setCreateLoading(true);
+    try {
+      const created = await createUser(newEmail.trim(), newPassword.trim(), newRole);
+      setUsers((prev) => [created, ...prev]);
+      toast(`User ${newEmail.trim()} berhasil dibuat`, 'success');
+      setCreateModalOpen(false);
+      setNewEmail('');
+      setNewPassword('');
+      setNewRole('user');
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Gagal membuat user', 'error');
+    }
+    setCreateLoading(false);
+  };
+
   const formatDate = (iso: string) => {
     return new Date(iso).toLocaleDateString('id-ID', {
       day: 'numeric',
@@ -90,14 +117,20 @@ export function AdminPage() {
 
   return (
     <div className="p-6 lg:p-8 max-w-6xl mx-auto">
-      <div className="mb-6">
-        <div className="flex items-center gap-3 mb-1">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+        <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-teal-600 flex items-center justify-center">
             <Shield className="w-5 h-5 text-white" />
           </div>
-          <h1 className="text-2xl lg:text-3xl font-bold text-slate-900">Manajemen User</h1>
+          <div>
+            <h1 className="text-2xl lg:text-3xl font-bold text-slate-900">Manajemen User</h1>
+            <p className="text-slate-500 text-sm">Kelola akun pengguna dan peran admin</p>
+          </div>
         </div>
-        <p className="text-slate-500 mt-1">Kelola akun pengguna dan peran admin</p>
+        <Button onClick={() => setCreateModalOpen(true)}>
+          <UserPlus className="w-4 h-4" />
+          Tambah User
+        </Button>
       </div>
 
       {/* Stat cards */}
@@ -287,6 +320,54 @@ export function AdminPage() {
           User <span className="font-medium text-slate-900">{deleteConfirm?.email}</span> akan dihapus permanen
           beserta semua data yang terkait (chat, dokumen, data records). Tindakan ini tidak dapat dibatalkan.
         </p>
+      </Modal>
+
+      {/* Create user modal */}
+      <Modal
+        open={createModalOpen}
+        onClose={() => setCreateModalOpen(false)}
+        title="Tambah User Baru"
+        size="md"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setCreateModalOpen(false)}>Batal</Button>
+            <Button onClick={handleCreateUser} loading={createLoading}>
+              <UserPlus className="w-4 h-4" />
+              Buat
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Input
+            label="Email"
+            type="email"
+            value={newEmail}
+            onChange={(e) => setNewEmail(e.target.value)}
+            placeholder="nama@perusahaan.com"
+            required
+          />
+          <Input
+            label="Kata Sandi"
+            type="password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            placeholder="Minimal 6 karakter"
+            minLength={6}
+            required
+          />
+          <Select
+            label="Role"
+            value={newRole}
+            onChange={(e) => setNewRole(e.target.value as 'user' | 'admin')}
+          >
+            <option value="user">User</option>
+            <option value="admin">Admin</option>
+          </Select>
+          <p className="text-xs text-slate-400">
+            User akan langsung dapat login tanpa verifikasi email.
+          </p>
+        </div>
       </Modal>
     </div>
   );

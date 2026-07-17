@@ -67,6 +67,71 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ users: profiles as AdminUser[] });
     }
 
+    // ── CREATE USER ─────────────────────────────────────────────
+    if (req.method === "POST" && action === "create-user") {
+      const { email, password, role } = await req.json();
+
+      if (!email || !password) {
+        return jsonResponse({ error: "Email dan kata sandi wajib diisi" }, 400);
+      }
+      if (password.length < 6) {
+        return jsonResponse({ error: "Kata sandi minimal 6 karakter" }, 400);
+      }
+      const assignedRole = role === "admin" ? "admin" : "user";
+
+      // Check if email already exists
+      const { data: existing } = await adminClient
+        .from("profiles")
+        .select("id")
+        .eq("email", email.toLowerCase().trim())
+        .maybeSingle();
+
+      if (existing) {
+        return jsonResponse({ error: "Email sudah terdaftar" }, 400);
+      }
+
+      // Create the auth user via admin API
+      const { data: createdUser, error: createError } = await adminClient.auth.admin.createUser({
+        email: email.toLowerCase().trim(),
+        password,
+        email_confirm: true,
+      });
+
+      if (createError) {
+        return jsonResponse({ error: createError.message }, 500);
+      }
+
+      // The handle_new_user trigger will create the profile row automatically,
+      // but we set the role explicitly in case it defaults to 'user'
+      if (createdUser.user) {
+        await adminClient
+          .from("profiles")
+          .upsert({
+            id: createdUser.user.id,
+            email: email.toLowerCase().trim(),
+            role: assignedRole,
+          }, { onConflict: "id" });
+
+        // If admin role, also add to preassigned_admins for consistency
+        if (assignedRole === "admin") {
+          await adminClient
+            .from("preassigned_admins")
+            .upsert({ email: email.toLowerCase().trim(), role: "admin" }, { onConflict: "email" });
+        }
+      }
+
+      return jsonResponse({
+        success: true,
+        message: `User ${email} berhasil dibuat`,
+        user: {
+          id: createdUser.user?.id,
+          email: email.toLowerCase().trim(),
+          role: assignedRole,
+          created_at: new Date().toISOString(),
+        },
+      });
+    }
+
     // ── CHANGE ROLE ─────────────────────────────────────────────
     if (req.method === "POST" && action === "change-role") {
       const { targetUserId, newRole } = await req.json();

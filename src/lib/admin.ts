@@ -59,3 +59,22 @@ export async function deleteUser(targetUserId: string): Promise<void> {
     throw new Error(body.error ?? `Gagal menghapus user (${res.status})`);
   }
 }
+
+export async function createUser(
+  email: string,
+  password: string,
+  role: 'user' | 'admin',
+): Promise<AdminUser> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${baseUrl()}?action=create-user`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ email, password, role }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? `Gagal membuat user (${res.status})`);
+  }
+  const data = await res.json();
+  return data.user as AdminUser;
+}
