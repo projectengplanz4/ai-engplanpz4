@@ -25,8 +25,10 @@ export function AuthPage() {
     if (error) {
       setError(error);
     } else {
-      toast(mode === 'login' ? 'Berhasil masuk!' : 'Akun berhasil dibuat! Silakan masuk.', 'success');
-      if (mode === 'signup') {
+      if (mode === 'login') {
+        toast('Berhasil masuk!', 'success');
+      } else {
+        toast('Akun berhasil dibuat! Silakan masuk.', 'success');
         setMode('login');
         setPassword('');
       }

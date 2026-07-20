@@ -60,8 +60,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signUp = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signUp({ email, password });
-    return { error: error ? translateAuthError(error) : null };
+    const { data, error } = await supabase.auth.signUp({ email, password });
+    if (error) return { error: translateAuthError(error) };
+    // If session is null after signup, email confirmation may be required
+    if (!data.session && data.user) {
+      return { error: 'Akun dibuat. Silakan cek email untuk konfirmasi, lalu masuk.' };
+    }
+    return { error: null };
   };
 
   const signIn = async (email: string, password: string) => {

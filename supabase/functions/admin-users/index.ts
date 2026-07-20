@@ -22,12 +22,10 @@ Deno.serve(async (req: Request) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-    // Create admin client with service role key (bypasses RLS)
     const adminClient = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    // Verify the caller is an admin by checking their JWT
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return jsonResponse({ error: "Unauthorized" }, 401);
@@ -39,7 +37,6 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ error: "Unauthorized" }, 401);
     }
 
-    // Check if caller is admin
     const { data: callerProfile, error: profileError } = await adminClient
       .from("profiles")
       .select("role")
@@ -69,30 +66,35 @@ Deno.serve(async (req: Request) => {
 
     // ── CREATE USER ─────────────────────────────────────────────
     if (req.method === "POST" && action === "create-user") {
-      const { email, password, role } = await req.json();
+      const body = await req.json();
+      const email = (body.email as string)?.toLowerCase().trim();
+      const password = body.password as string;
+      const role = body.role as string;
 
       if (!email || !password) {
         return jsonResponse({ error: "Email dan kata sandi wajib diisi" }, 400);
+      }
+      // Basic email format validation
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return jsonResponse({ error: "Format email tidak valid" }, 400);
       }
       if (password.length < 6) {
         return jsonResponse({ error: "Kata sandi minimal 6 karakter" }, 400);
       }
       const assignedRole = role === "admin" ? "admin" : "user";
 
-      // Check if email already exists
-      const { data: existing } = await adminClient
-        .from("profiles")
-        .select("id")
-        .eq("email", email.toLowerCase().trim())
-        .maybeSingle();
-
-      if (existing) {
+      // Check if email already exists in auth.users
+      const { data: existingUsers } = await adminClient.auth.admin.listUsers();
+      const exists = existingUsers?.users?.some(
+        (u: { email: string }) => u.email === email,
+      );
+      if (exists) {
         return jsonResponse({ error: "Email sudah terdaftar" }, 400);
       }
 
-      // Create the auth user via admin API
+      // Create the auth user
       const { data: createdUser, error: createError } = await adminClient.auth.admin.createUser({
-        email: email.toLowerCase().trim(),
+        email,
         password,
         email_confirm: true,
       });
@@ -101,46 +103,68 @@ Deno.serve(async (req: Request) => {
         return jsonResponse({ error: createError.message }, 500);
       }
 
-      // The handle_new_user trigger will create the profile row automatically,
-      // but we set the role explicitly in case it defaults to 'user'
-      if (createdUser.user) {
-        await adminClient
-          .from("profiles")
-          .upsert({
-            id: createdUser.user.id,
-            email: email.toLowerCase().trim(),
-            role: assignedRole,
-          }, { onConflict: "id" });
-
-        // If admin role, also add to preassigned_admins for consistency
-        if (assignedRole === "admin") {
-          await adminClient
-            .from("preassigned_admins")
-            .upsert({ email: email.toLowerCase().trim(), role: "admin" }, { onConflict: "email" });
-        }
+      if (!createdUser.user) {
+        return jsonResponse({ error: "Gagal membuat user" }, 500);
       }
+
+      const newUserId = createdUser.user.id;
+
+      // Upsert profile with the assigned role.
+      // The handle_new_user trigger may have already inserted a row with role='user'
+      // (or the preassigned admin role). We update it to the explicitly assigned role.
+      // Service role bypasses RLS; protect_profile_role trigger allows auth.uid() IS NULL.
+      const { error: upsertError } = await adminClient
+        .from("profiles")
+        .upsert(
+          { id: newUserId, email, role: assignedRole },
+          { onConflict: "id" },
+        );
+
+      if (upsertError) {
+        // If upsert fails, the user is already created in auth.users.
+        // Don't try to delete — just report the error so admin can retry the role change.
+        return jsonResponse(
+          { error: `User dibuat tapi gagal mengatur role: ${upsertError.message}` },
+          500,
+        );
+      }
+
+      // For admin users, also add to preassigned_admins for consistency
+      if (assignedRole === "admin") {
+        await adminClient
+          .from("preassigned_admins")
+          .upsert({ email, role: "admin" }, { onConflict: "email" });
+      }
+
+      // Fetch the final profile to return accurate data
+      const { data: finalProfile } = await adminClient
+        .from("profiles")
+        .select("id, email, role, created_at")
+        .eq("id", newUserId)
+        .maybeSingle();
 
       return jsonResponse({
         success: true,
         message: `User ${email} berhasil dibuat`,
         user: {
-          id: createdUser.user?.id,
-          email: email.toLowerCase().trim(),
+          id: newUserId,
+          email,
           role: assignedRole,
-          created_at: new Date().toISOString(),
+          created_at: finalProfile?.created_at ?? new Date().toISOString(),
         },
       });
     }
 
     // ── CHANGE ROLE ─────────────────────────────────────────────
     if (req.method === "POST" && action === "change-role") {
-      const { targetUserId, newRole } = await req.json();
+      const body = await req.json();
+      const targetUserId = body.targetUserId as string;
+      const newRole = body.newRole as string;
 
       if (!targetUserId || !newRole || !["user", "admin"].includes(newRole)) {
-        return jsonResponse({ error: "Invalid parameters" }, 400);
+        return jsonResponse({ error: "Parameter tidak valid" }, 400);
       }
 
-      // Prevent admin from demoting themselves
       if (targetUserId === userData.user.id) {
         return jsonResponse({ error: "Tidak dapat mengubah role akun sendiri" }, 400);
       }
@@ -154,21 +178,48 @@ Deno.serve(async (req: Request) => {
         return jsonResponse({ error: updateError.message }, 500);
       }
 
+      // Sync preassigned_admins
+      const { data: targetProfile } = await adminClient
+        .from("profiles")
+        .select("email")
+        .eq("id", targetUserId)
+        .maybeSingle();
+
+      if (targetProfile) {
+        if (newRole === "admin") {
+          await adminClient
+            .from("preassigned_admins")
+            .upsert({ email: targetProfile.email, role: "admin" }, { onConflict: "email" });
+        } else {
+          await adminClient
+            .from("preassigned_admins")
+            .delete()
+            .eq("email", targetProfile.email);
+        }
+      }
+
       return jsonResponse({ success: true, message: `Role diubah menjadi ${newRole}` });
     }
 
     // ── DELETE USER ─────────────────────────────────────────────
     if (req.method === "DELETE") {
-      const { targetUserId } = await req.json();
+      const body = await req.json();
+      const targetUserId = body.targetUserId as string;
 
       if (!targetUserId) {
-        return jsonResponse({ error: "User ID required" }, 400);
+        return jsonResponse({ error: "User ID diperlukan" }, 400);
       }
 
-      // Prevent admin from deleting themselves
       if (targetUserId === userData.user.id) {
         return jsonResponse({ error: "Tidak dapat menghapus akun sendiri" }, 400);
       }
+
+      // Get email before deletion to clean up preassigned_admins
+      const { data: targetProfile } = await adminClient
+        .from("profiles")
+        .select("email")
+        .eq("id", targetUserId)
+        .maybeSingle();
 
       const { error: deleteError } = await adminClient.auth.admin.deleteUser(targetUserId);
 
@@ -177,6 +228,14 @@ Deno.serve(async (req: Request) => {
       }
 
       // Profile row is auto-deleted via ON DELETE CASCADE
+      // Clean up preassigned_admins
+      if (targetProfile) {
+        await adminClient
+          .from("preassigned_admins")
+          .delete()
+          .eq("email", targetProfile.email);
+      }
+
       return jsonResponse({ success: true, message: "User berhasil dihapus" });
     }
 

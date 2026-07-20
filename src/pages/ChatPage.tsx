@@ -256,7 +256,7 @@ export function ChatPage() {
         setMessages((prev) => [
           ...prev,
           {
-            id: 'error',
+            id: `error-${Date.now()}`,
             session_id: sessionId!,
             role: 'assistant',
             content: 'Maaf, terjadi kesalahan saat menghubungi AI. Pastikan Ollama berjalan di alamat yang dikonfigurasi.',

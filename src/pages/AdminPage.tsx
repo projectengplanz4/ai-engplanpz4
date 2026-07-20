@@ -9,6 +9,7 @@ import {
   Crown,
   UserCircle,
   UserPlus,
+  AlertCircle,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -32,6 +33,7 @@ export function AdminPage() {
   const [newPassword, setNewPassword] = useState('');
   const [newRole, setNewRole] = useState<'user' | 'admin'>('user');
   const [createLoading, setCreateLoading] = useState(false);
+  const [createError, setCreateError] = useState('');
 
   const loadUsers = useCallback(async () => {
     setLoading(true);
@@ -79,21 +81,35 @@ export function AdminPage() {
   };
 
   const handleCreateUser = async () => {
-    if (!newEmail.trim() || !newPassword.trim()) {
-      toast('Email dan kata sandi wajib diisi', 'error');
+    setCreateError('');
+    const email = newEmail.trim().toLowerCase();
+    const password = newPassword.trim();
+
+    if (!email || !password) {
+      setCreateError('Email dan kata sandi wajib diisi');
       return;
     }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setCreateError('Format email tidak valid');
+      return;
+    }
+    if (password.length < 6) {
+      setCreateError('Kata sandi minimal 6 karakter');
+      return;
+    }
+
     setCreateLoading(true);
     try {
-      const created = await createUser(newEmail.trim(), newPassword.trim(), newRole);
+      const created = await createUser(email, password, newRole);
       setUsers((prev) => [created, ...prev]);
-      toast(`User ${newEmail.trim()} berhasil dibuat`, 'success');
+      toast(`User ${email} berhasil dibuat`, 'success');
       setCreateModalOpen(false);
       setNewEmail('');
       setNewPassword('');
       setNewRole('user');
+      setCreateError('');
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'Gagal membuat user', 'error');
+      setCreateError(err instanceof Error ? err.message : 'Gagal membuat user');
     }
     setCreateLoading(false);
   };
@@ -325,8 +341,7 @@ export function AdminPage() {
       {/* Create user modal */}
       <Modal
         open={createModalOpen}
-        onClose={() => setCreateModalOpen(false)}
-        title="Tambah User Baru"
+        onClose={() => { setCreateModalOpen(false); setCreateError(''); }}
         size="md"
         footer={
           <>
@@ -339,11 +354,20 @@ export function AdminPage() {
         }
       >
         <div className="space-y-4">
+          {createError && (
+            <div className="flex items-start gap-2 text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2.5">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>{createError}</span>
+            </div>
+          )}
           <Input
             label="Email"
             type="email"
             value={newEmail}
-            onChange={(e) => setNewEmail(e.target.value)}
+            onChange={(e) => {
+              setNewEmail(e.target.value);
+              if (createError) setCreateError('');
+            }}
             placeholder="nama@perusahaan.com"
             required
           />
@@ -351,7 +375,10 @@ export function AdminPage() {
             label="Kata Sandi"
             type="password"
             value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
+            onChange={(e) => {
+              setNewPassword(e.target.value);
+              if (createError) setCreateError('');
+            }}
             placeholder="Minimal 6 karakter"
             minLength={6}
             required
