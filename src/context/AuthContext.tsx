@@ -10,8 +10,8 @@ interface AuthContextValue {
   role: UserRole | null;
   isAdmin: boolean;
   loading: boolean;
-  signUp: (email: string, password: string) => Promise<{ error: string | null }>;
-  signIn: (email: string, password: string) => Promise<{ error: string | null }>;
+  signUp: (email: string, password: string) => Promise<{ error: string | null; message?: string }>;
+  signIn: (email: string, password: string) => Promise<{ error: string | null; message?: string }>;
   signOut: () => Promise<void>;
 }
 
@@ -62,9 +62,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signUp = async (email: string, password: string) => {
     const { data, error } = await supabase.auth.signUp({ email, password });
     if (error) return { error: translateAuthError(error) };
-    // If session is null after signup, email confirmation may be required
+    // With auto-confirm enabled, signup returns a session immediately.
+    // If no session (edge case), treat as success — user can log in.
     if (!data.session && data.user) {
-      return { error: 'Akun dibuat. Silakan cek email untuk konfirmasi, lalu masuk.' };
+      return { error: null, message: 'Akun berhasil dibuat. Silakan masuk.' };
     }
     return { error: null };
   };

@@ -20,7 +20,7 @@ export function AuthPage() {
     setLoading(true);
 
     const fn = mode === 'login' ? signIn : signUp;
-    const { error } = await fn(email.trim(), password);
+    const { error, message } = await fn(email.trim(), password);
 
     if (error) {
       setError(error);
@@ -28,7 +28,7 @@ export function AuthPage() {
       if (mode === 'login') {
         toast('Berhasil masuk!', 'success');
       } else {
-        toast('Akun berhasil dibuat! Silakan masuk.', 'success');
+        toast(message ?? 'Akun berhasil dibuat! Silakan masuk.', 'success');
         setMode('login');
         setPassword('');
       }
